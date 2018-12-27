@@ -7,7 +7,7 @@
 
 ## 技术路线 
 采用比较经典的CRISP-DM路线：1.商务理解；2.数据探索性分析；3.数据预处理（含特征工程）；4.统计建模分析；5.魔性评估；6.模型应用。  
-!()[https://www.ibm.com/developerworks/cn/data/library/techarticle/dm-1312datapreparation/figures/CRISP-DM.gif]
+![](https://www.ibm.com/developerworks/cn/data/library/techarticle/dm-1312datapreparation/figures/CRISP-DM.gif)
 
 ## 数据集
 klaR包提供的GermanCredit数据集，数据字典如下：
