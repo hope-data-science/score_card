@@ -1,0 +1,225 @@
+---
+title: "R语言信用评分卡：数据分箱（binning）"
+output: github_document
+---
+
+```{r}
+library(knitr)
+opts_chunk$set(eval = F)
+```
+
+
+  在做信用评分卡的时候，很重要的一个环节就是特征工程。在学习了WOE、IF这些概念之后，我认为对于机器学习的模型，无论是对分类变量还是数值变量，最好的特征工程方法都是分箱。至少对二分类的问题来说，是非常合适的。
+  本文先谈谈为什么要对数据进行分箱，然后给出分箱在R语言中的优秀解决方案。
+  
+## 为什么要分箱？
+  谈为什么要分箱之前，我们需要认清楚的是，我们的表格中有两种数据：离散变量和连续变量。因此我们需要分开谈为什么要对它们进行分箱。
+  对于离散变量（也就是分类变量）而言，经常遇到的问题就是，类别太多了！一下子几十个种类，那么如果做one-hot就会产生维度灾难。但是机器学习从来都只是认识数字，就算是给了因子变量，也是变成dummy来做，因此没有办法。唯一的办法就是，手动地进行分类。试想一下，虽然有这么多类别，我们能不能根据它们共有的特质，把它们归并起来，分成几个大类？又或者，其实很多类别只有很少的比例，能不能把这些小比例的类别合并为others？再不济，我们把它们先用one-hot编码，然后采用降维技术再筛掉一些类别？这些都是可以在一定程度上解决这个问题的。而分箱方法就是其中一种，它能够把非常多的类别按照一定的规则归并为少数的类别，从而突出了整体特征，避免了维度灾难。
+  对于连续变量（也就是数值变量），我们需要认真思考一个问题：我们最后得到的是一个极大似然估计，也就是概率值。如果使用逻辑回归（LR），这个连续变量一个单位的变化，真的就呈线性地增加了这个概率了吗？我认为很多情况下，答案是否定的。当一个人的年龄超过一定的岁数，他再增长一岁给违约概率带来的变化其实不是特别的大。而且在不同年龄范围，每个人违约的概率收到年龄的影响也不尽相同，所以后面才会有一个叫做多元自适应回归样条的出现（其本质是分段线性回归）。不过对于这么多变量而言，做样条显然不划算，弄得模型非常复杂。比较好的选择就是，在数据准备的阶段对这些连续变量做分箱。这样有非常多的好处，我列举一下：
+- 解决了缺失值问题：在分箱中，缺失值会单独成为一个类别。如果缺失机制是非随机缺失，那么这个特征是非常有用的。如果是随机缺失，则必须把这些记录删除，或者按照缺失机制进行插值。
+- 解决了离群值问题：在发现离群值的时候，我们会马上判断究竟是出错了还是真实的。如果是出错了，那么我们会剔除这些记录，或者是纠正它们。如果是真实的，那么就这么剔除掉就有些可惜了（除非样本量很大，剔除没有什么影响）。离群值对于线性模型的影响非常大，肯定是要处理的，基本处理方法包括设为缺失值、平均值、众数等，而分箱不失为一个非常优秀的选择。举例，如果只有一位高龄的用户，分箱的时候也只会进入“>60岁”的组别，这样模型就具有很强的稳定性。
+- 解决了不等斜率的问题：模型在不同的区间斜率是不一样的，这个假设我认为是真实存在的，前面也提到了。就是在不同的范围内，单位自变量的变化带来的因变量的变化是不同的。如果进行了分箱，我们就可以客观地得到不同箱带来的影响。
+  不过分箱的问题也是有的，因为分箱把所有变量最后都转化为分类变量，不过计算机只认识数字，最后还是要变为数值型变量的。这时候我们要知道分箱之后得到的分类变量，究竟是否存在着有序的关系。如果存在，是否是单调的。
+- 如果不存在有序关系，比如不同的省份之间是并列的关系，那么就必须使用One-hot编码。
+- 如果存在有序关系，但是不是单调的，则需要特殊考虑。比如还贷能力是中年人最强，青年、老年都比较弱，这就是单峰模型，不是单调递增或递减的关系。如果我们只按照年龄大小来用无监督分箱，肯定是不行的。
+- 如果存在有序关系，而且是单调的，那么可以按照其关系直接赋予数值。不过无监督地赋值1/2/3/4...，这样会有问题。这个还是我们上面提到的斜率不等的问题。
+  虽然问题这么多，但是自从WOE编码出现之后，这个问题似乎迎刃而解。这里不展开讨论WOE的知识（感兴趣找巨人的肩膀[【详解】银行信用评分卡中的WOE在干什么](https://zhuanlan.zhihu.com/p/30026040)），但是结论就是：WOE得到的证据权值表征了一个自变量类别对二分类因变量结果带来的变化方向及其程度。这简直就是自带降维的one-hot编码，在把所有分类变量转化为数值变量的同时，优秀地避免了上面提到的有序单调问题，还避免了维度灾难。
+  目前个人的认识就是：至少是做二分类问题的时候，应该对所有解释变量变量进行分箱（这同时也提高了数据的可解释水平，无论是对于数值型还是分类变量）。分箱之后，统一使用WOE编码将其数值化，然后再进行建模。
+  
+## 分箱的种类
+  分箱大体分为无监督分箱和有监督分箱两类，主要是针对数值型变量。
+1. 无监督分箱
+- 等长分箱（Equal length intervals）：分箱依据是数值的范围。比如0-100分，分为4个箱，那么切分点就是25/50/75。
+- 等频分箱（Equal frequency intervals）：分箱依据是分位数，也就是分箱之后各个箱包含样本量基本是一样多的。
+- 聚类分箱：分箱依据是，箱内平均差距最小，箱之间的平均差距最大。算法有kmeans，以及基于随机过程的“bagged clustering”。
+2. 有监督分箱
+- 卡方分箱（ChiMerge）：把数值排序后，计算相邻两个数值合并后的卡方值，合并所有卡方值最小的两个值。重复上述过程，直到满足结束条件。
+- 决策树分箱：以这个数值变量为自变量，结果变量为因变量，进行决策树模型拟合，根据拟合结果进行分箱。
+  
+## R语言实现
+  需要明确的，我们需要输入什么，要得到什么输出。输入就是我们原始的数据表格，包含解释变量和响应变量。输出应该包含两个部分：1.分箱的对应关系；2.分箱后的结果表格。
+
+### 无监督分箱
+  无监督分箱采用`dlookr`包的`binning`函数最佳。type参数可以控制无监督分箱的类型，包含了5种分箱类型，其中等长分箱的参数为“equal”，等频分箱的参数为“quantile”，K均值聚类的参数为“kmeans”，bagged clustering的参数为“bclust”。
+  直接上官方案例代码：
+```{r}
+library(pacman)
+p_load(dlookr)
+
+# Generate data for the example
+carseats <- ISLR::Carseats
+carseats[sample(seq(NROW(carseats)), 20), "Income"] <- NA
+carseats[sample(seq(NROW(carseats)), 5), "Urban"] <- NA
+# Binning the carat variable. default type argument is "quantile"
+bin <- binning(carseats$Income)
+# Print bins class object
+bin
+# Summarise bins class object
+summary(bin)
+# Plot bins class object
+plot(bin)
+# Using labels argument
+bin <- binning(carseats$Income, nbins = 4,
+              labels = c("LQ1", "UQ1", "LQ3", "UQ3"))
+bin
+# Using another type argument
+bin <- binning(carseats$Income, nbins = 5, type = "equal")
+bin
+bin <- binning(carseats$Income, nbins = 5, type = "pretty")
+bin
+bin <- binning(carseats$Income, nbins = 5, type = "kmeans")
+bin
+bin <- binning(carseats$Income, nbins = 5, type = "bclust")
+bin
+
+# -------------------------
+# Using pipes & dplyr
+# -------------------------
+library(dplyr)
+
+carseats %>%
+ mutate(Income_bin = binning(carseats$Income)) %>%
+ group_by(ShelveLoc, Income_bin) %>%
+ summarise(freq = n()) %>%
+ arrange(desc(freq)) %>%
+ head(10)
+```
+  代码中，bin就是一个包含三个属性值的因子向量，直接就是分箱的最终结果。而对应关系也就在结果之中，其因子名称即是区间的范围。
+
+### 有监督分箱
+  如果只考虑决策树分箱，而且不打算进行WOE编码，那么可以使用dlookr包的binning_by函数，官方使用帮助如下：
+```{r}
+# Generate data for the example
+carseats <- ISLR::Carseats
+carseats[sample(seq(NROW(carseats)), 20), "Income"] <- NA
+carseats[sample(seq(NROW(carseats)), 5), "Urban"] <- NA
+
+# optimal binning
+bin <- binning_by(carseats, "US", "Advertising")
+bin
+# summary optimal_bins class
+summary(bin)
+# visualize optimal_bins class
+plot(bin, sub = "bins of Advertising variable")
+```
+  不过既然是评分卡系列，一般分箱之后都是马上要做WOE编码的。如果要做评分卡，我们马上使用优秀的scorecard包，其中woebin是核心函数，能够获得经过分析后得到的分箱关系（分为哪几个箱，每个箱的特征）。利用这个分箱关系，直接对原来的数据进行分箱，则需要使用woebin_ply函数。这个函数不仅支持决策树分箱（`method = "tree"`），还支持卡方分箱（`method = "chimerge"`）。不过默认的方法是决策树方法。
+  此外，woebin_plot函数还可以支持作图，得到基于ggplot2的一个图形，展示了不同分箱中样本的数量及其好坏的比例。这种功能不说是全自动化，也是半自动化做出评分卡了。帮助文档已经非常优秀，我不再自己给出案例，直接搬运scorecard包的帮助文档。
+  请自行下载scorecard包。
+```{r}
+library(pacman)
+p_load(scorecard)
+```
+  
+  woebin函数：
+```{r}
+# load germancredit data
+data(germancredit)
+
+# Example I
+# binning of two variables in germancredit dataset
+# using tree method
+bins2_tree = woebin(germancredit, y="creditability",
+   x=c("credit.amount","housing"), method="tree")
+bins2_tree
+
+
+## Not run: 
+# using chimerge method
+bins2_chi = woebin(germancredit, y="creditability",
+   x=c("credit.amount","housing"), method="chimerge")
+
+# Example II
+# binning of the germancredit dataset
+bins_germ = woebin(germancredit, y = "creditability")
+# converting bins_germ into a dataframe
+# bins_germ_df = data.table::rbindlist(bins_germ)
+
+# Example III
+# customizing the breakpoints of binning
+library(data.table)
+dat = rbind(
+  germancredit,
+  data.table(creditability=sample(c("good","bad"),10,replace=TRUE)),
+  fill=TRUE)
+
+breaks_list = list(
+  age.in.years = c(26, 35, 37, "Inf%,%missing"),
+  housing = c("own", "for free%,%rent")
+)
+
+special_values = list(
+  credit.amount = c(2600, 9960, "6850%,%missing"),
+  purpose = c("education", "others%,%missing")
+)
+
+bins_cus_brk = woebin(dat, y="creditability",
+  x=c("age.in.years","credit.amount","housing","purpose"),
+  breaks_list=breaks_list, special_values=special_values)
+
+
+## End(Not run)
+```
+  woebin_ply函数：
+```{r}
+# load germancredit data
+data(germancredit)
+
+# Example I
+dt = germancredit[, c("creditability", "credit.amount", "purpose")]
+
+# binning for dt
+bins = woebin(dt, y = "creditability")
+
+# converting original value to woe
+dt_woe = woebin_ply(dt, bins=bins)
+str(dt_woe)
+
+## Not run: 
+# Example II
+# binning for germancredit dataset
+bins_germancredit = woebin(germancredit, y="creditability")
+
+# converting the values in germancredit to woe
+# bins is a list which generated from woebin()
+germancredit_woe = woebin_ply(germancredit, bins_germancredit)
+
+# bins is a dataframe
+bins_df = data.table::rbindlist(bins_germancredit)
+germancredit_woe = woebin_ply(germancredit, bins_df)
+
+## End(Not run)
+```
+  woebin_plot函数：
+```{r}
+# Load German credit data
+data(germancredit)
+
+# Example I
+bins1 = woebin(germancredit, y="creditability", x="credit.amount")
+
+p1 = woebin_plot(bins1)
+print(p1)
+
+## Not run: 
+# Example II
+bins = woebin(germancredit, y="creditability")
+plotlist = woebin_plot(bins)
+print(plotlist$credit.amount)
+
+# # save binning plot
+# for (i in 1:length(plotlist)) {
+#   ggplot2::ggsave(
+#      paste0(names(plotlist[i]), ".png"), plotlist[[i]],
+#      width = 15, height = 9, units="cm" )
+#   }
+
+## End(Not run)
+```
+  一键就能够对所有变量进行分箱，并进行WOE编码。强大！不过，此包并非没有竞争者，woeBinning包也能够实现类似的功能，还有smbinning也是专门针对分箱任务的包。不过scorecard加载了data.table包，又有foreach和doParallel这些并行支持，性能绝对是最强大的。如果要处理海量数据，scorecard能够调动更多的计算资源，更加快速。
+  这个包帮助文档很简洁，但是非常优秀，值得深入学习，也期待它开发更多丰富的功能。
+  
+  
+  
+  
+  
+
