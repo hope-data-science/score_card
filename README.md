@@ -26,5 +26,5 @@
 [基于Python的信用评分卡模型分析](https://zhuanlan.zhihu.com/p/35284849)  
 [信用评分卡(申请评分卡)模型](https://zhuanlan.zhihu.com/p/46642169)  
 [信用评分卡建模分析——基于R语言 - 薛定谔的猫的文章 - 知乎](https://zhuanlan.zhihu.com/p/29676042)  
-[信用评分卡拒绝推断1](https://zhuanlan.zhihu.com/p/51927257)
+[信用评分卡拒绝推断1](https://zhuanlan.zhihu.com/p/51927257)  
 [信用评分卡拒绝推断2](https://zhuanlan.zhihu.com/p/46090290)
